@@ -1,0 +1,97 @@
+services:
+
+  adminer:
+    container_name: adminer
+    image: adminer
+    env_file:
+      - ./infrastructure/adminer/.env
+    ports:
+      - 8080:8080
+    networks:
+      - library
+
+  message-broker:
+    image: rabbitmq:management
+    container_name: message-broker
+    env_file:
+      - ./infrastructure/message-broker/.env
+    environment:
+      RABBITMQ_DEFAULT_USER: "user"
+      RABBITMQ_DEFAULT_PASS: "password"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./infrastructure/message-broker/data:/var/lib/rabbitmq
+      - ./infrastructure/message-broker/log:/var/log/rabbitmq
+      - ./infrastructure/message-broker/rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - library
+
+  gateway-service:
+    build:
+      context: ./services/gateway-service
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/gateway-service:/app
+    ports:
+      - 3000:80
+    env_file:
+      - ./services/gateway-service/.env
+    networks:
+      - library
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/frontend:/app
+    ports:
+      - "8500:8500"
+    env_file:
+      - ./services/frontend/.env
+    networks:
+      - library
+    depends_on:
+      - gateway-service
+
+
+  # ======= DATABASES =======
+  auth-db:
+    image: postgres
+    env_file:
+      - ./infrastructure/auth-db/.env
+    volumes:
+      - ./infrastructure/auth-db/sql:/docker-entrypoint-initdb.d
+    networks:
+      - library
+
+  # ======= SERVICES =======
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/auth-service:/app
+    ports:
+      - 4444:80
+    env_file:
+      - ./services/auth-service/.env
+    networks:
+      - library
+    depends_on:
+      - auth-db
+      - message-broker
+
+
+
+networks:
+  library:
+    driver: bridge
